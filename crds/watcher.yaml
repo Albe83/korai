@@ -1,0 +1,145 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: watchers.korai.ai
+spec:
+  group: korai.ai
+  names:
+    kind: Watcher
+    plural: watchers
+    singular: watcher
+    shortNames:
+      - watch
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                objectSelector:
+                  type: object
+                  description: "Target resource type to watch (apiGroup, version, kind)"
+                  properties:
+                    apiGroup:
+                      type: string
+                      default: ""
+                    version:
+                      type: string
+                      default: "v1"
+                    kind:
+                      type: string
+                  required:
+                    - apiGroup
+                    - version
+                    - kind
+                namespaceSelector:
+                  type: string
+                  description: "Optional. Namespace to watch. If empty, uses the namespace of the Watcher resource. If '*', watches all namespaces."
+                labelSelector:
+                  type: object
+                  description: "Optional. Label selector to filter resources before applying trigger rules."
+                  properties:
+                    matchLabels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    matchExpressions:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          key:
+                            type: string
+                          operator:
+                            type: string
+                            enum:
+                              - In
+                              - NotIn
+                              - Exists
+                              - DoesNotExist
+                          values:
+                            type: array
+                            items:
+                              type: string
+                scanInterval:
+                  type: string
+                  description: "Interval between scans, e.g., '30s', '5m'. Defaults to '5m' if omitted."
+                  default: "5m"
+                minTriggerCount:
+                  type: integer
+                  description: "Minimum number of consecutive detections before creating an Analysis. Defaults to 1."
+                  minimum: 1
+                  default: 1
+                cooldownPeriod:
+                  type: string
+                  description: "Cooldown duration after an Analysis is closed before re-triggering a new one for the same resource."
+                priority:
+                  type: integer
+                  description: "Numeric priority of the Analysis. Higher numbers mean higher priority. Defaults to 0."
+                  default: 0
+                triggerOn:
+                  type: array
+                  description: "Rules evaluated to trigger an Analysis creation"
+                  items:
+                    type: object
+                    properties:
+                      path:
+                        type: string
+                        description: "JSONPath expression to evaluate on the resource"
+                      operator:
+                        type: string
+                        description: "Operator for evaluation: Equals, NotEquals, In, NotIn, Exists, LessThan, GreaterThan"
+                      value:
+                        description: "Expected value(s) depending on the operator"
+                        oneOf:
+                          - type: string
+                          - type: number
+                          - type: array
+              required:
+                - objectSelector
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: ResourceKind
+          type: string
+          jsonPath: .spec.objectSelector.kind
+        - name: ScanInterval
+          type: string
+          jsonPath: .spec.scanInterval
+        - name: NamespaceSelector
+          type: string
+          jsonPath: .spec.namespaceSelector
+examples:
+  - apiVersion: korai.ai/v1alpha1
+    kind: Watcher
+    metadata:
+      name: pod-crashloop-watcher
+      namespace: aiops-system
+    spec:
+      objectSelector:
+        apiGroup: ""
+        version: "v1"
+        kind: "Pod"
+      namespaceSelector: "default"
+      labelSelector:
+        matchLabels:
+          app: myapp
+      scanInterval: "2m"
+      minTriggerCount: 3
+      cooldownPeriod: "10m"
+      priority: 10
+      triggerOn:
+        - path: .status.phase
+          operator: In
+          value:
+            - CrashLoopBackOff
+            - Failed
+        - path: .status.conditions[?(@.type=='Ready')].status
+          operator: Equals
+          value: "False"
